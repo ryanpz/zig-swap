@@ -1,0 +1,160 @@
+#!/bin/sh
+#
+# A Zig and ZLS version manager. Downloads the Zig version specified in the
+# first argument, along with the respective ZLS release, and activates them by
+# creating symlinks in $HOME/.local/bin. Managed versions are placed in
+# $XDG_DATA_HOME/zig-swap.
+#
+# Dependencies:
+#   curl
+
+set -e
+
+XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+ZIG_SWAP_DIR="$XDG_DATA_HOME/zig-swap"
+ZIG_BIN="$HOME/.local/bin/zig"
+ZLS_BIN="$HOME/.local/bin/zls"
+
+ARCH="$(uname -m)"
+OS="$(uname | tr '[:upper:]' '[:lower:]')"
+
+if [ "$ARCH" = 'arm64' ]; then
+	ARCH='aarch64'
+fi
+
+if [ "$OS" = 'Darwin' ]; then
+	OS='macos'
+fi
+
+VARIANT_FMT="$ARCH-$OS"
+OLD_VARIANT_FMT="$OS-$ARCH"
+
+error() {
+	printf 'error: %s\n' "$1" >&2
+	exit 1
+}
+
+usage() {
+	printf 'usage: %s <ZIG_VERSION>\n' "${0##*/}"
+}
+
+valid_version_string() {
+	version_format='^[0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}'
+	printf '%s\n' "$1" | grep "$version_format" >/dev/null 2>&1
+}
+
+minor_version() {
+	printf '%s' "$1" | cut -f2 -d.
+}
+
+supported_version() {
+	[ "$(minor_version "$1")" -ge 9 ]
+}
+
+is_empty() {
+	for _f in "$1"/*; do
+		if [ -e "$_f" ]; then
+			return 1
+		fi
+	done
+	return 0
+}
+
+on_trap() {
+	if [ "$?" -ne 0 ]; then
+		[ -d "$CURRENT_ZIG_DIR" ] && is_empty "$CURRENT_ZIG_DIR" && rm -rf "$CURRENT_ZIG_DIR"
+		[ -d "$CURRENT_ZLS_DIR" ] && is_empty "$CURRENT_ZLS_DIR" && rm -rf "$CURRENT_ZLS_DIR"
+	fi
+	rm -rf "$TMP_DIR"
+}
+
+dl_extract() {
+	_archive="$TMP_DIR/${1##*/}"
+	curl -fLo "$_archive" "$1"
+	tar -xf "$_archive" -C "$2"
+}
+
+download_zig() {
+	printf 'downloading Zig %s\n' "$ZIG_VERSION"
+
+	# use old variant format for Zig < 0.14.1
+	_fmt="$VARIANT_FMT"
+	if [ "$ZIG_VERSION" = '0.14.0' ] || [ "$(minor_version "$ZIG_VERSION")" -lt 14 ]; then
+		_fmt="$OLD_VARIANT_FMT"
+	fi
+
+	dl_extract "https://ziglang.org/download/$ZIG_VERSION/zig-$_fmt-$ZIG_VERSION.tar.xz" "$TMP_DIR"
+
+	cp -r "$TMP_DIR/zig-$_fmt-$ZIG_VERSION"/* "$CURRENT_ZIG_DIR"
+}
+
+download_zls() {
+	printf 'downloading ZLS %s\n' "$ZLS_VERSION"
+
+	# use old variant format for ZLS < 0.15.0
+	_fmt="$VARIANT_FMT"
+	if [ "$(minor_version "$ZLS_VERSION")" -lt 15 ]; then
+		_fmt="$OLD_VARIANT_FMT"
+	fi
+
+	dl_extract "https://builds.zigtools.org/zls-$_fmt-$ZLS_VERSION.tar.xz" "$TMP_DIR"
+
+	cp "$TMP_DIR/zls" "$CURRENT_ZLS_DIR"
+}
+
+trap 'on_trap' EXIT
+
+if ! command -v curl >/dev/null 2>&1; then
+	error 'missing dependency "curl"'
+fi
+
+if [ -z "$1" ]; then
+	usage
+	exit 1
+fi
+
+ZIG_VERSION="$1"
+
+if ! valid_version_string "$ZIG_VERSION"; then
+	error 'invalid version provided (format: <major>.<minor>.<patch>)'
+fi
+
+if ! supported_version "$ZIG_VERSION"; then
+	error "unsupported version: $ZIG_VERSION. ${0##*/} supports Zig 0.9.0+"
+fi
+
+# ZLS releases don't coincide with Zig's patch releases. Since ZLS has yet to
+# release a patch version, we'll just assume the ZLS version is
+# <zig_major>.<zig_minor>.0
+ZLS_VERSION="${ZIG_VERSION%.*}.0"
+
+CURRENT_ZIG_DIR="$ZIG_SWAP_DIR/zig/$ZIG_VERSION"
+mkdir -p "$CURRENT_ZIG_DIR"
+
+CURRENT_ZLS_DIR="$ZIG_SWAP_DIR/zls/$ZLS_VERSION"
+mkdir -p "$CURRENT_ZLS_DIR"
+
+TMP_DIR="$(mktemp -d)"
+if [ ! -d "$TMP_DIR" ]; then
+	error "failed to create temporary directory"
+fi
+
+if [ ! -f "$CURRENT_ZIG_DIR/zig" ]; then
+	download_zig
+fi
+
+if [ ! -f "$CURRENT_ZLS_DIR/zls" ]; then
+	download_zls
+fi
+
+mkdir -p "$HOME/.local/bin"
+
+if [ -e "$ZIG_BIN" ] && [ ! -L "$ZIG_BIN" ]; then
+	error "$ZIG_BIN exists and is not a symlink; refusing to overwrite it"
+fi
+ln -sf "$CURRENT_ZIG_DIR/zig" "$ZIG_BIN"
+
+if [ -e "$ZLS_BIN" ] && [ ! -L "$ZLS_BIN" ]; then
+	error "$ZLS_BIN exists and is not a symlink; refusing to overwrite it"
+fi
+ln -sf "$CURRENT_ZLS_DIR/zls" "$ZLS_BIN"
