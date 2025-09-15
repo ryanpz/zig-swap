@@ -22,7 +22,7 @@ if [ "$ARCH" = 'arm64' ]; then
 	ARCH='aarch64'
 fi
 
-if [ "$OS" = 'Darwin' ]; then
+if [ "$OS" = 'darwin' ]; then
 	OS='macos'
 fi
 
