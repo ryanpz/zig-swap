@@ -158,3 +158,5 @@ if [ -e "$ZLS_BIN" ] && [ ! -L "$ZLS_BIN" ]; then
 	error "$ZLS_BIN exists and is not a symlink; refusing to overwrite it"
 fi
 ln -sf "$CURRENT_ZLS_DIR/zls" "$ZLS_BIN"
+
+printf 'swapped to Zig %s and ZLS %s\n' "$ZIG_VERSION" "$ZLS_VERSION"
