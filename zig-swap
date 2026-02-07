@@ -51,6 +51,16 @@ supported_version() {
 	[ "$(minor_version "$1")" -ge 9 ]
 }
 
+latest_zls_patch() {
+	_zig_version="$1"
+	curl -s 'https://api.github.com/repos/zigtools/zls/releases?per_page=100' |
+		grep '"tag_name"' |
+		sed 's/.*: "//;s/",*//' |
+		grep "^${_zig_version%.*}\." |
+		sort -t. -k3 -n |
+		tail -1
+}
+
 is_empty() {
 	for _f in "$1"/*; do
 		if [ -e "$_f" ]; then
@@ -123,10 +133,7 @@ if ! supported_version "$ZIG_VERSION"; then
 	error "unsupported version: $ZIG_VERSION. ${0##*/} supports Zig 0.9.0+"
 fi
 
-# ZLS releases don't coincide with Zig's patch releases. Since ZLS has yet to
-# release a patch version, we'll just assume the ZLS version is
-# <zig_major>.<zig_minor>.0
-ZLS_VERSION="${ZIG_VERSION%.*}.0"
+ZLS_VERSION="$(latest_zls_patch "$ZIG_VERSION")"
 
 CURRENT_ZIG_DIR="$ZIG_SWAP_DIR/zig/$ZIG_VERSION"
 mkdir -p "$CURRENT_ZIG_DIR"
