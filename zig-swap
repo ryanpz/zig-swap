@@ -39,8 +39,8 @@ usage() {
 }
 
 valid_version_string() {
-	version_format='^[0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}'
-	printf '%s\n' "$1" | grep "$version_format" >/dev/null 2>&1
+	_version_regex='^[0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}$'
+	printf '%s\n' "$1" | grep "$_version_regex" >/dev/null 2>&1
 }
 
 minor_version() {
