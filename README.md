@@ -3,7 +3,8 @@
 zig-swap is a Zig and ZLS version manager. It downloads the Zig version specified in the first argument, along with the respective ZLS release, and activates them by creating symlinks in `$HOME/.local/bin`.
 
 - Portable: zig-swap is written in POSIX `sh` and does not use any utility extensions
-- Minimal dependencies: curl
+- Minimal required dependencies: curl
+- Verifies archive signatures if [minisign](https://github.com/jedisct1/minisign) is installed
 - Supports Linux and macOS
 - Manages Zig 0.9.0 and above
 - Locally persists versions to avoid re-downloads

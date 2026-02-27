@@ -7,6 +7,7 @@
 #
 # Dependencies:
 #   curl
+#   minisign (optional, but recommended)
 
 set -e
 
@@ -14,6 +15,9 @@ XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 ZIG_SWAP_DIR="$XDG_DATA_HOME/zig-swap"
 ZIG_BIN="$HOME/.local/bin/zig"
 ZLS_BIN="$HOME/.local/bin/zls"
+ZIG_MINISIGN_PUBKEY='RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U'
+ZLS_MINISIGN_PUBKEY='RWR+9B91GBZ0zOjh6Lr17+zKf5BoSuFvrx2xSeDE57uIYvnKBGmMjOex'
+SKIP_SIGNATURE_VERIFICATION=
 
 ARCH="$(uname -m)"
 OS="$(uname | tr '[:upper:]' '[:lower:]')"
@@ -29,9 +33,26 @@ fi
 VARIANT_FMT="$ARCH-$OS"
 OLD_VARIANT_FMT="$OS-$ARCH"
 
+info() {
+	printf '%s\n' "$1" >&2
+}
+
+warn() {
+	printf 'warning: %s\n' "$1" >&2
+}
+
 error() {
 	printf 'error: %s\n' "$1" >&2
 	exit 1
+}
+
+confirm() {
+	printf '%s [y/N]: ' "$1" >&2
+	read -r _choice
+	case "$_choice" in
+	[Yy]*) return 0 ;;
+	*) return 1 ;;
+	esac
 }
 
 usage() {
@@ -75,17 +96,30 @@ on_trap() {
 		[ -d "$CURRENT_ZIG_DIR" ] && is_empty "$CURRENT_ZIG_DIR" && rm -rf "$CURRENT_ZIG_DIR"
 		[ -d "$CURRENT_ZLS_DIR" ] && is_empty "$CURRENT_ZLS_DIR" && rm -rf "$CURRENT_ZLS_DIR"
 	fi
-	rm -rf "$TMP_DIR"
+	[ -d "$TMP_DIR" ] && rm -rf "$TMP_DIR"
 }
 
 dl_extract() {
-	_archive="$TMP_DIR/${1##*/}"
-	curl -fLo "$_archive" "$1"
-	tar -xf "$_archive" -C "$2"
+	_url="$1"
+	_extract_dir="$2"
+	_minisign_pubkey="$3"
+	_filename="${_url##*/}"
+	_archive="$_extract_dir/$_filename"
+
+	curl -fLo "$_archive" "$_url"
+
+	if [ -z "$SKIP_SIGNATURE_VERIFICATION" ]; then
+		info "verifying signature for $_filename"
+		curl -sfLo "$_archive".minisig "$_url".minisig
+		minisign -qVm "$_archive" -P "$_minisign_pubkey"
+		info "signature for $_filename: OK"
+	fi
+
+	tar -xf "$_archive" -C "$_extract_dir"
 }
 
 download_zig() {
-	printf 'downloading Zig %s\n' "$ZIG_VERSION"
+	info "downloading Zig $ZIG_VERSION"
 
 	# use old variant format for Zig < 0.14.1
 	_fmt="$VARIANT_FMT"
@@ -93,13 +127,13 @@ download_zig() {
 		_fmt="$OLD_VARIANT_FMT"
 	fi
 
-	dl_extract "https://ziglang.org/download/$ZIG_VERSION/zig-$_fmt-$ZIG_VERSION.tar.xz" "$TMP_DIR"
+	dl_extract "https://ziglang.org/download/$ZIG_VERSION/zig-$_fmt-$ZIG_VERSION.tar.xz" "$TMP_DIR" "$ZIG_MINISIGN_PUBKEY"
 
 	cp -r "$TMP_DIR/zig-$_fmt-$ZIG_VERSION"/* "$CURRENT_ZIG_DIR"
 }
 
 download_zls() {
-	printf 'downloading ZLS %s\n' "$ZLS_VERSION"
+	info "downloading ZLS $ZLS_VERSION"
 
 	# use old variant format for ZLS < 0.15.0
 	_fmt="$VARIANT_FMT"
@@ -107,7 +141,7 @@ download_zls() {
 		_fmt="$OLD_VARIANT_FMT"
 	fi
 
-	dl_extract "https://builds.zigtools.org/zls-$_fmt-$ZLS_VERSION.tar.xz" "$TMP_DIR"
+	dl_extract "https://builds.zigtools.org/zls-$_fmt-$ZLS_VERSION.tar.xz" "$TMP_DIR" "$ZLS_MINISIGN_PUBKEY"
 
 	cp "$TMP_DIR/zls" "$CURRENT_ZLS_DIR"
 }
@@ -131,6 +165,16 @@ fi
 
 if ! supported_version "$ZIG_VERSION"; then
 	error "unsupported version: $ZIG_VERSION. ${0##*/} supports Zig 0.9.0+"
+fi
+
+if ! command -v minisign >/dev/null 2>&1; then
+	warn 'minisign not found'
+	if ! confirm 'continue without verifying archive signatures?'; then
+		info 'exiting without swapping Zig version'
+		exit 0
+	fi
+	warn 'skipping archive signature verification'
+	SKIP_SIGNATURE_VERIFICATION="true"
 fi
 
 ZLS_VERSION="$(latest_zls_patch "$ZIG_VERSION")"
@@ -167,4 +211,4 @@ fi
 ln -sf "$CURRENT_ZIG_DIR/zig" "$ZIG_BIN"
 ln -sf "$CURRENT_ZLS_DIR/zls" "$ZLS_BIN"
 
-printf 'swapped to Zig %s and ZLS %s\n' "$ZIG_VERSION" "$ZLS_VERSION"
+info "swapped to Zig $ZIG_VERSION and ZLS $ZLS_VERSION"
