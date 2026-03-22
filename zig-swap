@@ -99,12 +99,28 @@ on_trap() {
 	[ -d "$TMP_DIR" ] && rm -rf "$TMP_DIR"
 }
 
+check_minisign_installed() {
+	if [ -n "$SKIP_SIGNATURE_VERIFICATION" ] || command -v minisign >/dev/null 2>&1; then
+		return 0
+	fi
+
+	warn 'minisign not found'
+	if ! confirm 'continue without verifying archive signatures?'; then
+		info 'exiting without swapping Zig version'
+		exit 0
+	fi
+	warn 'skipping archive signature verification'
+	SKIP_SIGNATURE_VERIFICATION='true'
+}
+
 dl_extract() {
 	_url="$1"
 	_extract_dir="$2"
 	_minisign_pubkey="$3"
 	_filename="${_url##*/}"
 	_archive="$_extract_dir/$_filename"
+
+	check_minisign_installed
 
 	curl -fLo "$_archive" "$_url"
 
@@ -165,16 +181,6 @@ fi
 
 if ! supported_version "$ZIG_VERSION"; then
 	error "unsupported version: $ZIG_VERSION. ${0##*/} supports Zig 0.9.0+"
-fi
-
-if ! command -v minisign >/dev/null 2>&1; then
-	warn 'minisign not found'
-	if ! confirm 'continue without verifying archive signatures?'; then
-		info 'exiting without swapping Zig version'
-		exit 0
-	fi
-	warn 'skipping archive signature verification'
-	SKIP_SIGNATURE_VERIFICATION="true"
 fi
 
 ZLS_VERSION="$(latest_zls_patch "$ZIG_VERSION")"
