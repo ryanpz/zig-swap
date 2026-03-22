@@ -25,6 +25,11 @@ $ zls --version
 - zig-swap only supports tagged release versions of Zig
 - Ensure `$HOME/.local/bin` is in your `PATH`
 - Releases are downloaded from the official mirrors ([https://ziglang.org](https://ziglang.org) and [https://builds.zigtools.org](https://builds.zigtools.org)), and are managed in `$XDG_DATA_HOME/zig-swap`
+- If minisign is missing, zig-swap will warn and prompt for confirmation before downloading releases. To bypass this warning (and signature verification in general), set `SKIP_SIGNATURE_VERIFICATION` to any non-empty value:
+
+```sh
+$ SKIP_SIGNATURE_VERIFICATION=true zig-swap 0.15.1
+```
 
 ## License
 
